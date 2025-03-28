@@ -37,6 +37,9 @@ COMMANDS
 	edit <mapping>
 		Opens this mapping's file in your editor.
 
+	cat <mappings>...
+		Prints the given mappings.
+
 	ls [-- [<options>]...]
 		Runs the ls command in the mappings directory. You can provide
 		arguments to ls.
@@ -145,6 +148,7 @@ commands=(
 
 	create
 	edit
+	cat
 	ls
 	remove
 	run
@@ -254,6 +258,20 @@ command_edit() {
 		quit_because 1 "Mapping '$name' doesn't exists.";
 
 	exec $(get_editor_cmd) "$MAPPINGS_DIR/$name";
+}
+
+command_cat() {
+	(($# < 1)) && \
+		quit_because 1 "You must provide one or more mapping names.";
+
+	for name in "$@"; do
+		if ! test_mapping_exists "$name"; then
+			warn "Mapping '$name' doesn'T exists.";
+			continue;
+		fi;
+		cat "$MAPPINGS_DIR/$name";
+		echo;
+	done;
 }
 
 command_ls() {
