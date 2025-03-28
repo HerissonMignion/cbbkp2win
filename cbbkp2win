@@ -21,11 +21,14 @@ OPTIONS
 	-h, --help
 		Prints this help message.
 
+	--
+		Stops options parsing.
+
 COMMANDS
 	config
 		Prints current configuration.
 
-	set-editor-cmd <command> [<options>]...
+	set-editor-cmd [--] <command> [<options>]...
 		Define what command to edit files with.
 
 	set-backup-dir <directory>
@@ -49,6 +52,10 @@ COMMANDS
 
 	run <mappings>...
 		Copy all files of folders described in all provided mappings.
+
+	add-pwd <mapping> <directory>
+		Add the current directory in the given mapping to be saved
+		under a sub directory of the backup directory.
 
 HELP
 	
@@ -153,7 +160,7 @@ commands=(
 	remove
 	run
 
-	add
+	add-pwd
 );
 
 
@@ -364,8 +371,20 @@ command_run() {
 
 
 
-command_add() {
-	echo TODO;
+command_add-pwd() {
+	[ "$#" == 2 ] || \
+		quit_because 1 "You must provide exactly 2 arguments.";
+
+	local map=$1;
+	local dest=$2;
+
+	test_mapping_exists "$map" || \
+		quit_because 1 "Mapping '$name' doesn't exists.";
+
+	{
+		echo;
+		echo "$dest:$(pwd)";
+	} >> "$MAPPINGS_DIR/$map";
 }
 
 
