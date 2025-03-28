@@ -12,22 +12,44 @@ BACKUP_DIR_FILE=$CONFIG_DIR/backup_dir;
 help() {
 	>&2 cat <<HELP;
 SYNOPSIS
-
-	$(basename "$0") TODO
+	$(basename "$0") [<options>]... <command> [<arguments>]...
 
 DESCRIPTION
+	A command to semi-automatically take backups of folders.
 
-	TODO
+OPTIONS
+	-h, --help
+		Prints this help message.
 
 COMMANDS
+	config
+		Prints current configuration.
 
-	TODO
+	set-editor-cmd <command> [<options>]...
+		Define what command to edit files with.
+
+	set-backup-dir <directory>
+		Define what is the root directory for all backups.
+
+	create <mappings>...
+		Create the mapping names provided.
+
+	edit <mapping>
+		Opens this mapping's file in your editor.
+
+	ls [-- [<options>]...]
+		Runs the ls command in the mappings directory. You can provide
+		arguments to ls.
+
+	remove <mappings>...
+		Removes the mapping names provided.
+
+	run <mappings>...
+		Copy all files of folders described in all provided mappings.
 
 HELP
 	
 }
-
-
 
 
 trailing_args=();
