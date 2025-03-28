@@ -1,0 +1,417 @@
+#!/bin/bash
+
+
+
+
+CONFIG_DIR=~/.local/share/cbbkp2win;
+MAPPINGS_DIR=$CONFIG_DIR/mappings;
+EDITOR_CMD_FILE=$CONFIG_DIR/editor_cmd;
+BACKUP_DIR_FILE=$CONFIG_DIR/backup_dir;
+
+
+help() {
+	>&2 cat <<HELP;
+SYNOPSIS
+	$(basename "$0") [<options>]... <command> [<arguments>]...
+
+DESCRIPTION
+	A command to semi-automatically take backups of folders.
+
+OPTIONS
+	-h, --help
+		Prints this help message.
+
+	--
+		Stops options parsing.
+
+COMMANDS
+	config
+		Prints current configuration.
+
+	set-editor-cmd [--] <command> [<options>]...
+		Define what command to edit files with.
+
+	set-backup-dir <directory>
+		Define what is the root directory for all backups.
+
+	create <mappings>...
+		Create the mapping names provided.
+
+	edit <mapping>
+		Opens this mapping's file in your editor.
+
+	cat <mappings>...
+		Prints the given mappings.
+
+	ls [-- [<options>]...]
+		Runs the ls command in the mappings directory. You can provide
+		arguments to ls.
+
+	remove <mappings>...
+		Removes the mapping names provided.
+
+	run <mappings>...
+		Copy all files of folders described in all provided mappings.
+
+	add-pwd <mapping> <directory>
+		Add the current directory in the given mapping to be saved
+		under a sub directory of the backup directory.
+
+HELP
+	
+}
+
+
+trailing_args=();
+while (($#)); do
+	arg=$1;
+	shift;
+	case "$arg" in
+		(--?*)
+			trailing_args+=("$arg");
+			;;
+		(--)
+			trailing_args+=(--);
+			break;
+			;;
+		(-?*)
+			for letter in $(grep -o . <<<"${arg#-}"); do
+				trailing_args+=("-$letter");
+			done;
+			;;
+		(*)
+			trailing_args+=("$arg");
+			;;
+	esac;
+done;
+set -- "${trailing_args[@]}" "$@";
+
+trailing_args=();
+while (($#)); do
+	arg=$1;
+	shift;
+	case "$arg" in
+		(-h|--help)
+			help;
+			exit 0;
+			;;
+		(--)
+			break;
+			;;
+		(-?*)
+			>&2 echo "Unknown option: '$arg'.";
+			exit 1;
+			;;
+		(*)
+			trailing_args+=("$arg");
+			;;
+	esac;
+done;
+set -- "${trailing_args[@]}" "$@";
+unset trailing_args letter arg;
+
+idempotent_setup() {
+	if ! [ -f "$CONFIG_DIR/init" ]; then
+		mkdir -p "$CONFIG_DIR";
+		mkdir -p "$MAPPINGS_DIR";
+		echo "emacs -nw" > "$EDITOR_CMD_FILE";
+		echo ~/.cbbkp2win_backup > "$BACKUP_DIR_FILE";
+		touch "$CONFIG_DIR/init";
+	fi;
+}
+
+
+
+
+
+
+
+get_editor_cmd() {
+	cat "$EDITOR_CMD_FILE";
+}
+get_backup_dir() {
+	cat "$BACKUP_DIR_FILE";
+}
+
+
+
+quit_because() {
+    local ec=$1;
+	shift;
+	>&2 echo "$@";
+	exit "$ec";
+}
+warn() {
+	>&2 echo "$@";
+}
+
+commands=(
+	help
+	test
+
+	config
+	set-editor-cmd
+	set-backup-dir
+
+	create
+	edit
+	cat
+	ls
+	remove
+	run
+
+	add-pwd
+);
+
+
+
+
+
+
+
+
+command_help() {
+	help;
+}
+
+command_test() {
+	"$@";
+}
+
+command_config() {
+	echo "CONFIG_DIR=$CONFIG_DIR";
+	echo "EDITOR_CMD=$(get_editor_cmd)";
+	echo "BACKUP_DIR=$(get_backup_dir)";
+}
+
+command_set-editor-cmd() {
+	(($# < 1)) && \
+		quit_because 1 "You need to provide a command to open an editor with.";
+	[ -z "$1" ] && \
+		quit_because 1 "You need to provide a non-empty first argument.";
+	echo "$@" > "$EDITOR_CMD_FILE";
+}
+
+command_set-backup-dir() {
+	(($# < 1)) && \
+		quit_because 1 "You need to provide a directory.";
+	(($# > 1)) && \
+		quit_because 1 "You need to provide 1 argument: a directory.";
+
+	local dirpath=$(realpath "$1");
+
+	echo "$dirpath" > "$BACKUP_DIR_FILE";
+
+	[ -d "$dirpath" ] || \
+		>&2 echo "Warning: Directory $dirpath does not exists.";
+}
+
+
+
+
+
+test_mapping_name() {
+	[ -z "$1" ] && return 1;
+	local name=$1;
+	name=${name//./};
+	name=${name//-/};
+	name=${name//\//};
+	name=${name//\\/};
+	name=${name// /};
+	[ "$name" == "$1" ];
+}
+
+test_mapping_exists() {
+	local name=$1;
+	test_mapping_name "$name" || return 1;
+	[ -f "$MAPPINGS_DIR/$name" ];
+}
+
+
+command_create() {
+	(($# < 1)) && \
+		quit_because 1 "You must provide a mapping name to create.";
+	
+    local name;
+	for name in "$@"; do
+		if ! test_mapping_name "$name"; then
+			warn "'$name' is not a valid name.";
+			continue;
+		fi;
+		if test_mapping_exists "$name"; then
+			warn "Mapping '$name' already exists.";
+			continue;
+		fi;
+
+		cat <<"NEW" > "$MAPPINGS_DIR/$name";
+# Each line must be of the format "<dest>:<source>".
+# <dest> must be a relative path inside the backup directory.
+# <source> must be an absolue path.
+# Begin a line with a '#' to comment it.
+
+
+NEW
+		
+	done;
+}
+
+command_edit() {
+	(($# < 1)) && \
+		quit_because 1 "You must provide a mapping name to edit.";
+	(($# > 1)) && \
+		quit_because 1 "You can only edit one mapping at a time.";
+	local name=$1;
+	test_mapping_exists "$name" || \
+		quit_because 1 "Mapping '$name' doesn't exists.";
+
+	exec $(get_editor_cmd) "$MAPPINGS_DIR/$name";
+}
+
+command_cat() {
+	(($# < 1)) && \
+		quit_because 1 "You must provide one or more mapping names.";
+
+	for name in "$@"; do
+		if ! test_mapping_exists "$name"; then
+			warn "Mapping '$name' doesn'T exists.";
+			continue;
+		fi;
+		cat "$MAPPINGS_DIR/$name";
+		echo;
+	done;
+}
+
+command_ls() {
+	ls "$MAPPINGS_DIR" "$@";
+}
+
+command_remove() {
+	local name;
+	for name in "$@"; do
+		if ! test_mapping_exists "$name"; then
+			warn "Mapping '$name' doesn't exists.";
+			continue;
+		fi;
+		rm "$MAPPINGS_DIR/$name";
+	done;
+}
+
+
+
+
+
+
+
+
+copy_path() {
+	local dest=$1;
+	local source=$2;
+
+	local dest2=$(get_backup_dir)/$dest;
+	
+	mkdir -p "$(get_backup_dir)";
+	# les quit_because dans les subshells ne terminent pas le script.
+	
+	if [ -f "$source" ]; then
+		(
+			cd /;
+			rm -f "$dest2" || \
+				quit_because 1 "Could not remove destination.";
+			mkdir -p "$(dirname "$dest2")";
+			cp "$source" "$dest2";
+		);
+	elif [ -d "$source" ]; then
+		(
+			cd /;
+			rm -rf "$dest2" || \
+				quit_because 1 "Could not remove destination.";
+			mkdir -p "$(dirname "$dest2")";
+			cp -r "$source" "$dest2";
+		);
+	else
+		warn "'$source' doesn't exists.";
+		return 1;
+	fi;
+}
+
+
+run_mapping() {
+	local name=$1;
+
+	local dest;
+	local source;
+	while IFS="" read -r line || [ -n "$line" ]; do
+		dest=${line%%:*};
+		source=${line#*:};
+		# echo "$dest : $source";
+
+		copy_path "$dest" "$source";
+	done < <(
+		cat "$MAPPINGS_DIR/$name" | \
+			grep -v '^#' | \
+			grep .
+	);
+}
+
+
+command_run() {
+	(($# < 1)) && \
+		quit_because 1 "You must provide at least one mapping to run.";
+
+	local name;
+	for name in "$@"; do
+		if ! test_mapping_exists "$name"; then
+			warn "Mapping '$name' doesn't exists.";
+			continue;
+		fi;
+
+		run_mapping "$name";
+	done;
+}
+
+
+
+command_add-pwd() {
+	[ "$#" == 2 ] || \
+		quit_because 1 "You must provide exactly 2 arguments.";
+
+	local map=$1;
+	local dest=$2;
+
+	test_mapping_exists "$map" || \
+		quit_because 1 "Mapping '$name' doesn't exists.";
+
+	{
+		echo;
+		echo "$dest:$(pwd)";
+	} >> "$MAPPINGS_DIR/$map";
+}
+
+
+
+
+
+main() {
+	idempotent_setup;
+	
+	(($# < 1)) && \
+		quit_because 1 "No command provided. See --help.";
+		
+	local cmd=$1;
+	shift;
+
+	local candidate;
+	for candidate in "${commands[@]}"; do
+		if [ "$candidate" == "$cmd" ]; then
+			"command_$candidate" "$@";
+			return "$?";
+		fi;
+	done;
+
+	quit_because 1 "'$cmd' is not a command. See --help.";
+}
+
+
+main "$@";
+
+
